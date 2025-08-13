@@ -1,0 +1,436 @@
+/**
+ * Styles for the tracing dashboard
+ * Modern, responsive design with dark theme support
+ */
+
+.tracing-dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary, #1a1a1a);
+  color: var(--text-primary, #ffffff);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+}
+
+/* Header */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+  padding: 0 20px;
+  background: var(--bg-secondary, #2a2a2a);
+  border-bottom: 1px solid var(--border-color, #404040);
+  flex-shrink: 0;
+}
+
+.header-left,
+.header-center,
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-center {
+  flex: 1;
+  justify-content: center;
+}
+
+/* Live indicator */
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-inactive, #666);
+  transition: background-color 0.2s ease;
+}
+
+.status-dot.live {
+  background: var(--status-active, #00ff88);
+  box-shadow: 0 0 6px var(--status-active, #00ff88);
+}
+
+/* Main content area */
+.dashboard-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Panels */
+.left-panel,
+.right-panel {
+  width: 300px;
+  background: var(--bg-tertiary, #252525);
+  border-right: 1px solid var(--border-color, #404040);
+  overflow-y: auto;
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.right-panel {
+  border-right: none;
+  border-left: 1px solid var(--border-color, #404040);
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Visualization containers */
+.visualization-container {
+  flex: 1;
+  position: relative;
+  background: var(--bg-canvas, #1e1e1e);
+  border-bottom: 1px solid var(--border-color, #404040);
+}
+
+.timeline-container {
+  height: 200px;
+  background: var(--bg-secondary, #2a2a2a);
+  border-top: 1px solid var(--border-color, #404040);
+}
+
+/* Vertical layout */
+.tracing-dashboard.vertical .main-content {
+  flex-direction: row;
+}
+
+.tracing-dashboard.vertical .visualization-container {
+  border-bottom: none;
+  border-right: 1px solid var(--border-color, #404040);
+}
+
+.tracing-dashboard.vertical .timeline-container {
+  width: 250px;
+  height: auto;
+  border-top: none;
+  border-left: 1px solid var(--border-color, #404040);
+}
+
+/* Collapsed sidebar */
+.tracing-dashboard.sidebar-collapsed .left-panel,
+.tracing-dashboard.sidebar-collapsed .right-panel {
+  transform: translateX(-100%);
+  width: 0;
+}
+
+.tracing-dashboard.sidebar-collapsed .right-panel {
+  transform: translateX(100%);
+}
+
+/* Footer */
+.dashboard-footer {
+  height: 32px;
+  background: var(--bg-tertiary, #252525);
+  border-top: 1px solid var(--border-color, #404040);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.status-info {
+  display: flex;
+  gap: 20px;
+}
+
+.status-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.status-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.status-controls select {
+  background: var(--bg-input, #333);
+  border: 1px solid var(--border-color, #555);
+  color: var(--text-primary, #fff);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  max-width: 120px;
+}
+
+/* Buttons */
+.btn {
+  background: var(--btn-bg, #404040);
+  border: 1px solid var(--btn-border, #555);
+  color: var(--text-primary, #fff);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--btn-hover, #505050);
+  border-color: var(--btn-border-hover, #666);
+}
+
+.btn:active {
+  background: var(--btn-active, #353535);
+}
+
+.btn.btn-icon {
+  padding: 6px 8px;
+  font-size: 16px;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn.btn-primary {
+  background: var(--primary, #0066cc);
+  border-color: var(--primary, #0066cc);
+}
+
+.btn.btn-primary:hover {
+  background: var(--primary-hover, #0052a3);
+}
+
+.btn.btn-danger {
+  background: var(--danger, #dc3545);
+  border-color: var(--danger, #dc3545);
+}
+
+.btn.btn-success {
+  background: var(--success, #28a745);
+  border-color: var(--success, #28a745);
+}
+
+/* Responsive design */
+@media (max-width: 1200px) {
+  .left-panel,
+  .right-panel {
+    width: 250px;
+  }
+  
+  .header-left,
+  .header-right {
+    gap: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .tracing-dashboard {
+    font-size: 14px;
+  }
+  
+  .dashboard-header {
+    height: 50px;
+    padding: 0 12px;
+  }
+  
+  .left-panel,
+  .right-panel {
+    width: 200px;
+  }
+  
+  .timeline-container {
+    height: 150px;
+  }
+  
+  .status-controls {
+    display: none;
+  }
+}
+
+/* Theme variables */
+:root {
+  /* Dark theme (default) */
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #252525;
+  --bg-canvas: #1e1e1e;
+  --bg-input: #333;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-muted: #888888;
+  --border-color: #404040;
+  --primary: #0066cc;
+  --primary-hover: #0052a3;
+  --success: #28a745;
+  --warning: #ffc107;
+  --danger: #dc3545;
+  --status-active: #00ff88;
+  --status-inactive: #666666;
+  --btn-bg: #404040;
+  --btn-border: #555555;
+  --btn-hover: #505050;
+  --btn-border-hover: #666666;
+  --btn-active: #353535;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #e9ecef;
+  --bg-canvas: #fdfdfd;
+  --bg-input: #ffffff;
+  --text-primary: #212529;
+  --text-secondary: #495057;
+  --text-muted: #6c757d;
+  --border-color: #dee2e6;
+  --btn-bg: #f8f9fa;
+  --btn-border: #dee2e6;
+  --btn-hover: #e9ecef;
+  --btn-border-hover: #adb5bd;
+  --btn-active: #dee2e6;
+  --status-active: #198754;
+  --status-inactive: #adb5bd;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-tertiary, #252525);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color, #404040);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted, #666);
+}
+
+/* Animations */
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+.pulse {
+  animation: pulse 2s infinite;
+}
+
+/* Loading states */
+.loading {
+  position: relative;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid var(--primary, #0066cc);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Focus styles for accessibility */
+.btn:focus,
+input:focus,
+select:focus {
+  outline: 2px solid var(--primary, #0066cc);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --border-color: #ffffff;
+    --text-muted: #cccccc;
+  }
+  
+  [data-theme="light"] {
+    --border-color: #000000;
+    --text-muted: #333333;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  .tracing-dashboard {
+    height: auto;
+    background: white;
+    color: black;
+  }
+  
+  .dashboard-header,
+  .dashboard-footer,
+  .btn {
+    display: none;
+  }
+  
+  .dashboard-content {
+    flex-direction: column;
+  }
+  
+  .left-panel,
+  .right-panel {
+    width: 100%;
+    border: none;
+    margin-bottom: 20px;
+  }
+}
