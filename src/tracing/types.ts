@@ -1,147 +1,126 @@
 /**
- * Core tracing types and interfaces for Claude-Flow
- * Provides type definitions for the tracing and visualization system
+ * Core Types and Interfaces for Tracing System
  */
-
-export type TraceEventType = 
-  | 'agent_method'
-  | 'communication' 
-  | 'task_execution'
-  | 'memory_access'
-  | 'coordination'
-  | 'error'
-  | 'performance'
-  | 'decision_point';
-
-export type TracePhase = 'start' | 'progress' | 'complete' | 'error';
-
-export type TracePriority = 'low' | 'normal' | 'high' | 'critical';
 
 export interface TraceEvent {
   id: string;
   timestamp: number;
+  type: TraceEventType | string;
+  agentId?: string;
+  swarmId?: string;
   sessionId: string;
+  data: Record<string, any>;
+  duration?: number;
+  parentId?: string;
+  children?: string[];
+  metadata?: EventMetadata & {
+    parentId?: string;
+    correlationId?: string;
+  };
+  performance?: Record<string, any>;
+  phase?: string;
+}
+
+export enum TraceEventType {
+  AGENT_SPAWN = 'AGENT_SPAWN',
+  AGENT_DESTROY = 'AGENT_DESTROY',
+  TASK_START = 'TASK_START',
+  TASK_COMPLETE = 'TASK_COMPLETE',
+  TASK_FAIL = 'TASK_FAIL',
+  MESSAGE_SEND = 'MESSAGE_SEND',
+  MESSAGE_RECEIVE = 'MESSAGE_RECEIVE',
+  STATE_CHANGE = 'STATE_CHANGE',
+  COORDINATION_EVENT = 'COORDINATION_EVENT',
+  PERFORMANCE_METRIC = 'PERFORMANCE_METRIC'
+}
+
+export interface EventMetadata {
+  source: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  tags: string[];
+  correlationId?: string;
+}
+
+export interface AgentTrace {
   agentId: string;
-  type: TraceEventType;
-  phase: TracePhase;
-  data: TraceEventData;
-  metadata: TraceMetadata;
+  agentType: string;
+  events: TraceEvent[];
+  startTime: number;
+  endTime?: number;
+  state: AgentState;
   performance: PerformanceMetrics;
 }
 
-export interface TraceEventData {
-  // Input/Output traces
-  prompt?: string;
-  response?: string;
-  tools?: ToolCall[];
-  
-  // Communication traces
-  message?: AgentMessage;
-  coordination?: CoordinationEvent;
-  
-  // Execution traces
-  task?: TaskExecution;
-  decision?: DecisionPoint;
-  
-  // Memory traces
-  memoryAccess?: MemoryOperation;
-  context?: ContextUpdate;
-  
-  // Error traces
-  error?: ErrorDetails;
-  
-  // Custom data
-  [key: string]: any;
-}
-
-export interface TraceMetadata {
-  parentId?: string;
-  causationId?: string;
-  correlationId: string;
-  tags: string[];
-  priority: TracePriority;
-  retention: number; // hours
-  compressed?: boolean;
-  archived?: boolean;
+export interface AgentState {
+  id: string;
+  status: 'idle' | 'busy' | 'error' | 'terminated' | 'spawning';
+  currentTask?: string;
+  capabilities?: string[];
+  variables: Record<string, any>;
+  context: Record<string, any>;
+  performance: {
+    duration: number;
+    memoryUsage: number;
+    cpuTime: number;
+  };
+  createdAt: number;
+  lastActivity: number;
+  resources?: ResourceUsage;
+  memory?: Record<string, any>;
 }
 
 export interface PerformanceMetrics {
-  duration: number;
+  cpuUsage: number;
   memoryUsage: number;
-  tokenCount?: number;
-  cpuTime: number;
-  networkLatency?: number;
+  taskCount: number;
+  averageResponseTime: number;
+  throughput: number;
+  errorRate: number;
 }
 
-export interface ToolCall {
-  name: string;
-  args: Record<string, any>;
-  result?: any;
-  error?: string;
-  duration: number;
+export interface ResourceUsage {
+  cpu: number;
+  memory: number;
+  disk: number;
+  network: number;
 }
 
-export interface AgentMessage {
-  from: string;
-  to: string[];
-  content: any;
-  type: string;
+export interface TraceSnapshot {
+  id: string;
   timestamp: number;
+  swarmState: SwarmState;
+  agentStates: Map<string, AgentState>;
+  eventCount: number;
+  version: string;
 }
 
-export interface CoordinationEvent {
-  type: 'task_assignment' | 'resource_allocation' | 'synchronization';
-  participants: string[];
-  details: Record<string, any>;
+export interface SwarmState {
+  id: string;
+  topology: 'mesh' | 'hierarchical' | 'ring' | 'star';
+  activeAgents: string[];
+  runningTasks: string[];
+  coordinationStatus: 'active' | 'degraded' | 'failed';
 }
 
-export interface TaskExecution {
-  taskId: string;
-  type: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  result?: any;
-  error?: string;
+export interface TracingConfig {
+  enabled: boolean;
+  samplingRate: number;
+  bufferSize: number;
+  flushInterval: number;
+  storageRetention: number;
+  compressionEnabled: boolean;
+  realtimeStreaming: boolean;
+  performanceMonitoring: boolean;
+  level?: string;
 }
 
-export interface DecisionPoint {
-  context: string;
-  options: Array<{
-    choice: string;
-    rationale: string;
-    confidence: number;
-  }>;
-  selected: string;
-  reasoning: string;
-}
-
-export interface MemoryOperation {
-  type: 'read' | 'write' | 'delete';
-  key: string;
-  value?: any;
-  namespace: string;
-}
-
-export interface ContextUpdate {
-  type: 'add' | 'remove' | 'modify';
-  context: Record<string, any>;
-  reason: string;
-}
-
-export interface ErrorDetails {
-  message: string;
-  stack?: string;
-  code?: string;
-  recoverable: boolean;
-  context?: Record<string, any>;
-}
-
-// Session and Graph types
+// Additional interfaces needed for storage
 export interface TraceSession {
   id: string;
   name: string;
   startTime: number;
   endTime?: number;
-  status: 'active' | 'completed' | 'failed';
+  status: string;
   metadata: Record<string, any>;
   agentCount: number;
   traceCount: number;
@@ -150,78 +129,50 @@ export interface TraceSession {
 export interface TraceGraph {
   nodes: TraceNode[];
   edges: TraceEdge[];
-  layout: GraphLayout;
-  metadata: GraphMetadata;
+  layout: {
+    type: string;
+    direction: string;
+    spacing: { x: number; y: number };
+    nodeSize?: { width: number; height: number };
+    rankSep?: number;
+    nodeSep?: number;
+  };
+  metadata: {
+    nodeCount: number;
+    edgeCount: number;
+    depth: number;
+    width: number;
+    complexity: number;
+    criticalPath: string[];
+    rootNodes?: number;
+    executionTime?: number;
+  };
 }
 
 export interface TraceNode {
   id: string;
-  trace: TraceEvent;
   label: string;
-  type: TraceEventType;
-  status: 'active' | 'completed' | 'error';
-  position?: { x: number; y: number };
-  size?: { width: number; height: number };
-  children: string[];
-  parent?: string;
+  type: string;
+  agentId?: string;
+  timestamp: number;
+  duration: number;
+  data: Record<string, any>;
+  position: { x: number; y: number };
+  style: Record<string, any>;
 }
 
 export interface TraceEdge {
   id: string;
   source: string;
   target: string;
-  type: 'sequence' | 'parallel' | 'spawn' | 'callback' | 'communication';
-  label?: string;
-  weight: number;
-  animated?: boolean;
-}
-
-export interface GraphLayout {
-  type: 'hierarchical' | 'force' | 'timeline' | 'circular';
-  direction?: 'TB' | 'BT' | 'LR' | 'RL';
-  spacing: { x: number; y: number };
-  rankSeparation?: number;
-  nodeSeparation?: number;
-}
-
-export interface GraphMetadata {
-  nodeCount: number;
-  edgeCount: number;
-  depth: number;
-  width: number;
-  complexity: number;
-  criticalPath: string[];
-}
-
-// Time Travel types
-export interface DebugState {
-  mode: 'paused' | 'running' | 'stepping';
-  currentTrace?: TraceEvent;
-  currentTime: number;
-  sessionId: string;
-  breakpoints: Set<string>;
-  watchExpressions: WatchExpression[];
-  callStack: CallStackFrame[];
-}
-
-export interface WatchExpression {
-  id: string;
-  expression: string;
-  value: any;
   type: string;
-  lastUpdated: number;
-  error?: string;
+  label: string;
+  style: Record<string, any>;
 }
 
-export interface CallStackFrame {
-  id: string;
-  traceId: string;
-  functionName: string;
-  agentId: string;
-  timestamp: number;
-  variables: Record<string, any>;
-  source?: string;
-  line?: number;
+export interface TimeRange {
+  start: number;
+  end: number;
 }
 
 export interface SystemState {
@@ -231,29 +182,20 @@ export interface SystemState {
   memory: Record<string, MemoryEntry>;
   communications: Record<string, CommunicationEntry[]>;
   resources: Record<string, ResourceState>;
-}
-
-export interface AgentState {
-  id: string;
-  status: string;
-  currentTask?: string;
-  variables: Record<string, any>;
-  context: Record<string, any>;
-  performance: PerformanceMetrics;
-  createdAt: number;
-  lastActivity: number;
+  swarms?: Record<string, SwarmState>;
+  metrics?: Record<string, any>;
 }
 
 export interface TaskState {
   id: string;
   agentId: string;
   type: string;
-  status: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
   progress: number;
-  result?: any;
-  error?: string;
-  startedAt: number;
+  startedAt?: number;
   completedAt?: number;
+  result?: any;
+  error?: any;
 }
 
 export interface MemoryEntry {
@@ -261,93 +203,83 @@ export interface MemoryEntry {
   timestamp: number;
   agentId: string;
   type: string;
-  ttl?: number;
 }
 
 export interface CommunicationEntry {
-  message: any;
+  message: string;
   timestamp: number;
   direction: 'inbound' | 'outbound';
-  target?: string;
   source?: string;
+  target?: string;
 }
 
 export interface ResourceState {
   id: string;
   type: string;
   status: string;
-  allocation: Record<string, any>;
-  usage: Record<string, number>;
+  allocation: any;
+  usage: Record<string, any>;
   timestamp: number;
 }
 
-// Configuration types
-export interface TracingConfig {
-  enabled: boolean;
-  level: 'minimal' | 'standard' | 'verbose' | 'debug';
-  maxCpuThreshold: number;
-  maxMemoryThreshold: number;
-  minTraceInterval: number;
-  retention: {
-    default: number; // hours
-    error: number;
-    performance: number;
-    debug: number;
-  };
-  compression: {
-    enabled: boolean;
-    threshold: number; // bytes
-    algorithm: 'gzip' | 'lz4' | 'snappy';
-  };
-  sampling: {
-    enabled: boolean;
-    rate: number; // 0-1
-    adaptiveRates: Record<TraceEventType, number>;
-  };
-  filters: {
-    excludeEvents: TraceEventType[];
-    includeAgents: string[];
-    excludeAgents: string[];
-    minimumPriority: TracePriority;
-  };
-  performance: {
-    batchSize: number;
-    flushInterval: number;
-    maxQueueSize: number;
-    asyncProcessing: boolean;
-  };
-  storage: {
-    backend: 'sqlite' | 'memory' | 'hybrid';
-    maxFileSize: number;
-    maxFiles: number;
-    compressionLevel: number;
-  };
-  realtime: {
-    enabled: boolean;
-    port: number;
-    maxConnections: number;
-    heartbeatInterval: number;
-    compressionEnabled: boolean;
-  };
+export interface StreamingClient {
+  id: string;
+  socket: WebSocket;
+  filters: EventFilter[];
+  lastHeartbeat: number;
+  subscriptions: string[];
 }
 
-// Streaming types
+export interface EventFilter {
+  type?: TraceEventType[];
+  agentId?: string[];
+  timeRange?: { start: number; end: number };
+  severity?: string[];
+  tags?: string[];
+}
+
+// Streaming types for WebSocket implementation
 export interface StreamEvent {
-  type: 'trace_event' | 'agent_event' | 'system_event' | 'batch_events';
-  event: string;
-  data: any;
+  type: 'trace_event' | 'system_event' | 'heartbeat' | 'session_info' | 'initial_traces' | 'historical_data' | 'time_travel_state' | 'error' | 'connection';
+  event?: string;
+  data?: any;
   timestamp: number;
-  sessionId: string;
+  sessionId?: string;
+  clientId?: string;
+  serverInfo?: {
+    version: string;
+    capabilities: string[];
+    limits: {
+      maxMessageSize: number;
+      batchSize: number;
+    };
+  };
+  session?: TraceSession;
+  traces?: TraceEvent[];
+  timeRange?: TimeRange;
+  total?: number;
+  error?: {
+    code: string;
+    message: string;
+  };
 }
 
 export interface ClientMessage {
-  type: 'subscribe_session' | 'request_history' | 'time_travel' | 'filter_agents' | 'set_breakpoint';
+  type: 'subscribe_session' | 'request_history' | 'time_travel' | 'filter_agents' | 'set_breakpoint' | 'remove_breakpoint' | 'heartbeat' | 'auth';
   sessionId?: string;
   timeRange?: TimeRange;
   timestamp?: number;
   agentIds?: string[];
   traceId?: string;
   condition?: string;
+  token?: string;
+}
+
+export interface CompressedBatch {
+  events: any[];
+  compression: 'none' | 'delta' | 'gzip';
+  timestamp: number;
+  checksum?: string;
 }
 
 export interface TimeRange {
@@ -355,96 +287,72 @@ export interface TimeRange {
   end: number;
 }
 
-export interface CompressedBatch {
-  events: CompressedEvent[];
-  compression: 'delta' | 'gzip' | 'none';
-  timestamp: number;
-  checksum?: string;
-}
-
-export interface CompressedEvent {
+export interface TraceSession {
   id: string;
-  t: number; // timestamp
-  a: string; // agentId
-  type: string;
-  data: any;
-  p?: string; // parentId
+  name?: string;
+  startTime: number;
+  endTime?: number;
+  agentCount: number;
+  eventCount: number;
+  status: 'active' | 'completed' | 'error';
+  metadata?: Record<string, any>;
 }
 
-// Visualization types
-export interface VisualizationConfig {
-  theme: 'light' | 'dark';
-  layout: GraphLayout;
-  animation: {
-    enabled: boolean;
-    duration: number;
-    easing: string;
-  };
-  interaction: {
-    zoomEnabled: boolean;
-    panEnabled: boolean;
-    selectionEnabled: boolean;
-    tooltipsEnabled: boolean;
-  };
-  rendering: {
-    maxNodes: number;
-    lodThreshold: number;
-    labelThreshold: number;
-    edgeThreshold: number;
-  };
+// Rate limiting
+export interface RateLimitConfig {
+  windowMs: number;
+  maxMessages: number;
+  maxBytesPerWindow: number;
 }
 
-export interface NodeStyle {
-  fill: string;
-  stroke: string;
-  strokeWidth: number;
-  size: number;
-  shape: 'circle' | 'square' | 'triangle' | 'diamond';
-  label: {
-    visible: boolean;
-    color: string;
-    fontSize: number;
-    fontFamily: string;
-  };
+export interface ClientRateLimit {
+  windowStart: number;
+  messageCount: number;
+  bytesCount: number;
 }
 
-export interface EdgeStyle {
-  stroke: string;
-  strokeWidth: number;
-  strokeDasharray?: string;
-  marker: {
-    start?: string;
-    end?: string;
-  };
-  animation?: {
-    flow: boolean;
-    speed: number;
-  };
+// Connection health
+export interface ConnectionHealth {
+  lastPing: number;
+  lastPong: number;
+  latency: number;
+  isHealthy: boolean;
 }
 
-// Export utility types
-export type TraceEventHandler = (event: TraceEvent) => void | Promise<void>;
-export type TraceFilter = (event: TraceEvent) => boolean;
-export type TraceTransform = (event: TraceEvent) => TraceEvent;
-
-export interface TraceCollectorOptions {
-  config: TracingConfig;
-  filters: TraceFilter[];
-  transforms: TraceTransform[];
-  handlers: TraceEventHandler[];
+// Authentication
+export interface AuthConfig {
+  enabled: boolean;
+  jwtSecret?: string;
+  apiKeyHeader?: string;
+  validApiKeys?: Set<string>;
 }
 
-export interface GraphBuilderOptions {
-  layout: GraphLayout;
-  filters: {
-    timeRange?: TimeRange;
-    agentIds?: string[];
-    eventTypes?: TraceEventType[];
-    minPriority?: TracePriority;
-  };
-  aggregation: {
-    enabled: boolean;
-    threshold: number;
-    method: 'time' | 'type' | 'agent';
-  };
+export interface ClientAuth {
+  authenticated: boolean;
+  userId?: string;
+  permissions?: string[];
+  expiresAt?: number;
+}
+
+// Binary protocol
+export interface BinaryMessage {
+  type: number; // Message type as number
+  length: number;
+  data: Buffer;
+  checksum: number;
+}
+
+// Backpressure handling
+export interface BackpressureConfig {
+  highWaterMark: number;
+  lowWaterMark: number;
+  maxQueueSize: number;
+  dropOldest: boolean;
+}
+
+export interface ClientBackpressure {
+  queueSize: number;
+  isBlocked: boolean;
+  lastDrop: number;
+  droppedCount: number;
 }

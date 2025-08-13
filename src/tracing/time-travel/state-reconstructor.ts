@@ -16,43 +16,21 @@ import {
 import { TraceStorage } from '../storage/trace-storage.js';
 import { Logger } from '../../core/logger.js';
 import { generateId } from '../../utils/helpers.js';
-
-export interface SnapshotConfig {
-  interval: number; // milliseconds between snapshots
-  maxSnapshots: number;
-  compressionEnabled: boolean;
-  persistenceEnabled: boolean;
-}
-
-export interface StateSnapshot {
-  id: string;
-  sessionId: string;
-  timestamp: number;
-  state: SystemState;
-  checksum: string;
-  compressed: boolean;
-}
+import { SnapshotManager, SnapshotConfig, StateSnapshot } from './snapshot-manager.js';
 
 export class StateReconstructor {
   private storage: TraceStorage;
   private logger: Logger;
   private snapshotManager: SnapshotManager;
   private stateCache = new Map<string, SystemState>();
-  private config: SnapshotConfig;
 
   constructor(
     storage: TraceStorage, 
-    config: SnapshotConfig = {
-      interval: 60000, // 1 minute
-      maxSnapshots: 100,
-      compressionEnabled: true,
-      persistenceEnabled: true
-    }
+    snapshotConfig: Partial<SnapshotConfig> = {}
   ) {
     this.storage = storage;
     this.logger = new Logger('StateReconstructor');
-    this.config = config;
-    this.snapshotManager = new SnapshotManager(storage, config);
+    this.snapshotManager = new SnapshotManager(storage, snapshotConfig);
   }
 
   /**
@@ -75,7 +53,7 @@ export class StateReconstructor {
     let fromTime: number;
     
     if (snapshot && snapshot.timestamp <= timestamp) {
-      baseState = { ...snapshot.state };
+      baseState = await this.snapshotManager.reconstructState(snapshot);
       fromTime = snapshot.timestamp;
       this.logger.debug(`Using snapshot from ${new Date(fromTime).toISOString()}`);
     } else {
@@ -98,8 +76,12 @@ export class StateReconstructor {
     this.stateCache.set(cacheKey, reconstructedState);
     
     // Create snapshot if enough time has passed
-    if (!snapshot || (timestamp - fromTime) > this.config.interval) {
-      await this.snapshotManager.createSnapshot(sessionId, timestamp, reconstructedState);
+    const snapshotInterval = 60000; // 1 minute default
+    if (!snapshot || (timestamp - fromTime) > snapshotInterval) {
+      await this.snapshotManager.createSnapshot(sessionId, reconstructedState, {
+        type: 'full',
+        tags: ['auto-generated']
+      });
     }
     
     return reconstructedState;
@@ -245,6 +227,7 @@ export class StateReconstructor {
 
   private applyAgentMethod(state: SystemState, event: TraceEvent): void {
     const agentId = event.agentId;
+    if (!agentId) return;
     
     if (!state.agents[agentId]) {
       state.agents[agentId] = this.createEmptyAgentState(agentId, event.timestamp);
@@ -255,7 +238,7 @@ export class StateReconstructor {
     switch (event.phase) {
       case 'start':
         if (event.data.method === 'spawn') {
-          agent.status = 'spawning';
+          agent.status = 'busy'; // spawning -> busy
         } else {
           agent.status = 'busy';
         }
@@ -263,21 +246,25 @@ export class StateReconstructor {
         
       case 'complete':
         agent.status = 'idle';
-        agent.lastActivity = event.timestamp;
         if (event.data.result) {
-          agent.variables.lastResult = event.data.result;
+          agent.memory.lastResult = event.data.result;
         }
         break;
         
       case 'error':
         agent.status = 'error';
-        agent.variables.lastError = event.data.error;
+        agent.memory.lastError = event.data.error;
         break;
     }
     
-    // Update performance metrics
+    // Update resource usage if available
     if (event.performance) {
-      agent.performance = { ...event.performance };
+      if (event.performance.memoryUsage !== undefined) {
+        agent.resources.memory = event.performance.memoryUsage;
+      }
+      if (event.performance.cpuTime !== undefined) {
+        agent.resources.cpu = event.performance.cpuTime;
+      }
     }
   }
 
@@ -365,7 +352,7 @@ export class StateReconstructor {
     }
     
     // Update agent's current task
-    if (state.agents[event.agentId]) {
+    if (event.agentId && state.agents[event.agentId]) {
       if (taskState.status === 'running') {
         state.agents[event.agentId].currentTask = taskId;
       } else if (taskState.status === 'completed' || taskState.status === 'failed') {
@@ -385,7 +372,7 @@ export class StateReconstructor {
         state.memory[key] = {
           value: memoryOp.value,
           timestamp: event.timestamp,
-          agentId: event.agentId,
+          agentId: event.agentId || 'system',
           type: typeof memoryOp.value
         };
         break;
@@ -439,7 +426,7 @@ export class StateReconstructor {
         // Update agent synchronization states
         for (const participantId of coordination.participants) {
           if (state.agents[participantId]) {
-            state.agents[participantId].context.syncPoint = event.timestamp;
+            state.agents[participantId].memory.syncPoint = event.timestamp;
           }
         }
         break;
@@ -449,18 +436,23 @@ export class StateReconstructor {
   private applyError(state: SystemState, event: TraceEvent): void {
     const agentId = event.agentId;
     
-    if (state.agents[agentId]) {
+    if (agentId && state.agents[agentId]) {
       state.agents[agentId].status = 'error';
-      state.agents[agentId].variables.lastError = event.data.error;
-      state.agents[agentId].lastActivity = event.timestamp;
+      state.agents[agentId].memory.lastError = event.data.error;
     }
   }
 
   private applyPerformance(state: SystemState, event: TraceEvent): void {
     const agentId = event.agentId;
     
-    if (state.agents[agentId] && event.performance) {
-      state.agents[agentId].performance = { ...event.performance };
+    if (agentId && state.agents[agentId] && event.performance) {
+      // Update resource usage based on performance data
+      if (event.performance.memoryUsage !== undefined) {
+        state.agents[agentId].resources.memory = event.performance.memoryUsage;
+      }
+      if (event.performance.cpuTime !== undefined) {
+        state.agents[agentId].resources.cpu = event.performance.cpuTime;
+      }
     }
   }
 
@@ -470,8 +462,8 @@ export class StateReconstructor {
     
     const agentId = event.agentId;
     
-    if (state.agents[agentId]) {
-      state.agents[agentId].context.lastDecision = {
+    if (agentId && state.agents[agentId]) {
+      state.agents[agentId].memory.lastDecision = {
         context: decision.context,
         selected: decision.selected,
         reasoning: decision.reasoning,
@@ -493,17 +485,16 @@ export class StateReconstructor {
 
   private createEmptyAgentState(agentId: string, timestamp: number): AgentState {
     return {
-      id: agentId,
       status: 'idle',
-      variables: {},
-      context: {},
-      performance: {
-        duration: 0,
-        memoryUsage: 0,
-        cpuTime: 0
+      currentTask: undefined,
+      capabilities: [],
+      resources: {
+        cpu: 0,
+        memory: 0,
+        disk: 0,
+        network: 0
       },
-      createdAt: timestamp,
-      lastActivity: timestamp
+      memory: {}
     };
   }
 
@@ -548,18 +539,96 @@ export class StateReconstructor {
   }
 
   private diffTasks(from: Record<string, TaskState>, to: Record<string, TaskState>): any {
-    // Similar to diffAgents but for tasks
-    return { added: [], removed: [], modified: [] };
+    const changes: any = { added: [], removed: [], modified: [] };
+    
+    // Find added tasks
+    for (const [id, task] of Object.entries(to)) {
+      if (!from[id]) {
+        changes.added.push(task);
+      }
+    }
+    
+    // Find removed tasks
+    for (const [id, task] of Object.entries(from)) {
+      if (!to[id]) {
+        changes.removed.push(task);
+      }
+    }
+    
+    // Find modified tasks
+    for (const [id, task] of Object.entries(to)) {
+      if (from[id] && JSON.stringify(from[id]) !== JSON.stringify(task)) {
+        changes.modified.push({
+          id,
+          from: from[id],
+          to: task
+        });
+      }
+    }
+    
+    return changes;
   }
 
   private diffMemory(from: Record<string, MemoryEntry>, to: Record<string, MemoryEntry>): any {
-    // Similar to diffAgents but for memory entries
-    return { added: [], removed: [], modified: [] };
+    const changes: any = { added: [], removed: [], modified: [] };
+    
+    // Find added memory entries
+    for (const [key, entry] of Object.entries(to)) {
+      if (!from[key]) {
+        changes.added.push({ key, entry });
+      }
+    }
+    
+    // Find removed memory entries
+    for (const [key, entry] of Object.entries(from)) {
+      if (!to[key]) {
+        changes.removed.push({ key, entry });
+      }
+    }
+    
+    // Find modified memory entries
+    for (const [key, entry] of Object.entries(to)) {
+      if (from[key] && JSON.stringify(from[key]) !== JSON.stringify(entry)) {
+        changes.modified.push({
+          key,
+          from: from[key],
+          to: entry
+        });
+      }
+    }
+    
+    return changes;
   }
 
   private diffResources(from: Record<string, ResourceState>, to: Record<string, ResourceState>): any {
-    // Similar to diffAgents but for resources
-    return { added: [], removed: [], modified: [] };
+    const changes: any = { added: [], removed: [], modified: [] };
+    
+    // Find added resources
+    for (const [id, resource] of Object.entries(to)) {
+      if (!from[id]) {
+        changes.added.push(resource);
+      }
+    }
+    
+    // Find removed resources
+    for (const [id, resource] of Object.entries(from)) {
+      if (!to[id]) {
+        changes.removed.push(resource);
+      }
+    }
+    
+    // Find modified resources
+    for (const [id, resource] of Object.entries(to)) {
+      if (from[id] && JSON.stringify(from[id]) !== JSON.stringify(resource)) {
+        changes.modified.push({
+          id,
+          from: from[id],
+          to: resource
+        });
+      }
+    }
+    
+    return changes;
   }
 
   private buildDependencyGraph(events: TraceEvent[]): Map<string, string[]> {
@@ -578,9 +647,73 @@ export class StateReconstructor {
   }
 
   private findLongestPath(dependencies: Map<string, string[]>, events: TraceEvent[]): TraceEvent[] {
-    // Implementation of critical path finding algorithm
-    // This is a simplified version - real implementation would use topological sort
-    return events.slice(0, 10); // Placeholder
+    const eventMap = new Map<string, TraceEvent>();
+    const duration = new Map<string, number>();
+    const path = new Map<string, TraceEvent[]>();
+    
+    // Build event map and initialize durations
+    for (const event of events) {
+      eventMap.set(event.id, event);
+      duration.set(event.id, event.performance?.duration || 0);
+      path.set(event.id, [event]);
+    }
+    
+    // Topological sort with longest path calculation
+    const visited = new Set<string>();
+    const visiting = new Set<string>();
+    
+    const visit = (eventId: string): number => {
+      if (visiting.has(eventId)) {
+        // Cycle detected - skip
+        return duration.get(eventId) || 0;
+      }
+      
+      if (visited.has(eventId)) {
+        return duration.get(eventId) || 0;
+      }
+      
+      visiting.add(eventId);
+      
+      const deps = dependencies.get(eventId) || [];
+      let maxDepDuration = 0;
+      let longestDepPath: TraceEvent[] = [];
+      
+      for (const depId of deps) {
+        const depDuration = visit(depId);
+        if (depDuration > maxDepDuration) {
+          maxDepDuration = depDuration;
+          longestDepPath = path.get(depId) || [];
+        }
+      }
+      
+      const event = eventMap.get(eventId);
+      const eventDuration = event?.performance?.duration || 0;
+      const totalDuration = maxDepDuration + eventDuration;
+      
+      duration.set(eventId, totalDuration);
+      path.set(eventId, [...longestDepPath, event!]);
+      
+      visiting.delete(eventId);
+      visited.add(eventId);
+      
+      return totalDuration;
+    };
+    
+    // Find the event with the longest path
+    let longestPath: TraceEvent[] = [];
+    let maxDuration = 0;
+    
+    for (const eventId of eventMap.keys()) {
+      if (!visited.has(eventId)) {
+        const totalDuration = visit(eventId);
+        if (totalDuration > maxDuration) {
+          maxDuration = totalDuration;
+          longestPath = path.get(eventId) || [];
+        }
+      }
+    }
+    
+    return longestPath;
   }
 
   private identifyBottlenecks(path: TraceEvent[]): Bottleneck[] {
@@ -598,94 +731,63 @@ export class StateReconstructor {
     dependencies: Map<string, string[]>, 
     criticalPath: TraceEvent[]
   ): ParallelizationOpportunity[] {
-    // Find events that could be run in parallel
-    return []; // Placeholder
-  }
-}
-
-/**
- * Snapshot manager for efficient state reconstruction
- */
-class SnapshotManager {
-  private storage: TraceStorage;
-  private config: SnapshotConfig;
-  private snapshots = new Map<string, StateSnapshot[]>();
-
-  constructor(storage: TraceStorage, config: SnapshotConfig) {
-    this.storage = storage;
-    this.config = config;
-  }
-
-  async createSnapshot(
-    sessionId: string, 
-    timestamp: number, 
-    state: SystemState
-  ): Promise<string> {
-    const snapshotId = generateId('snapshot');
+    const opportunities: ParallelizationOpportunity[] = [];
+    const criticalEventIds = new Set(criticalPath.map(e => e.id));
     
-    const snapshot: StateSnapshot = {
-      id: snapshotId,
-      sessionId,
-      timestamp,
-      state: { ...state },
-      checksum: this.calculateChecksum(state),
-      compressed: this.config.compressionEnabled
-    };
+    // Group events by timestamp to find potential parallel execution
+    const timeGroups = new Map<number, TraceEvent[]>();
     
-    // Add to memory cache
-    if (!this.snapshots.has(sessionId)) {
-      this.snapshots.set(sessionId, []);
+    for (const event of criticalPath) {
+      const timeSlot = Math.floor(event.timestamp / 1000) * 1000; // Group by second
+      if (!timeGroups.has(timeSlot)) {
+        timeGroups.set(timeSlot, []);
+      }
+      timeGroups.get(timeSlot)!.push(event);
     }
     
-    const sessionSnapshots = this.snapshots.get(sessionId)!;
-    sessionSnapshots.push(snapshot);
-    
-    // Keep only the most recent snapshots
-    if (sessionSnapshots.length > this.config.maxSnapshots) {
-      sessionSnapshots.shift();
-    }
-    
-    // Persist if enabled
-    if (this.config.persistenceEnabled) {
-      await this.persistSnapshot(snapshot);
-    }
-    
-    return snapshotId;
-  }
-
-  async findNearestSnapshot(
-    sessionId: string, 
-    timestamp: number
-  ): Promise<StateSnapshot | null> {
-    const sessionSnapshots = this.snapshots.get(sessionId) || [];
-    
-    // Find the latest snapshot before or at the timestamp
-    let nearest: StateSnapshot | null = null;
-    
-    for (const snapshot of sessionSnapshots) {
-      if (snapshot.timestamp <= timestamp) {
-        if (!nearest || snapshot.timestamp > nearest.timestamp) {
-          nearest = snapshot;
+    // Find groups with multiple events that don't depend on each other
+    for (const [timeSlot, events] of timeGroups) {
+      if (events.length > 1) {
+        const independentEvents: TraceEvent[] = [];
+        const eventIds = events.map(e => e.id);
+        
+        // Check if events are independent
+        for (let i = 0; i < events.length; i++) {
+          const event = events[i];
+          const deps = dependencies.get(event.id) || [];
+          const hasInternalDependency = deps.some(depId => eventIds.includes(depId));
+          
+          if (!hasInternalDependency) {
+            independentEvents.push(event);
+          }
+        }
+        
+        if (independentEvents.length > 1) {
+          const totalDuration = independentEvents.reduce((sum, e) => 
+            sum + (e.performance?.duration || 0), 0
+          );
+          const maxDuration = Math.max(...independentEvents.map(e => 
+            e.performance?.duration || 0
+          ));
+          const potentialSpeedup = totalDuration / maxDuration;
+          
+          opportunities.push({
+            events: independentEvents.map(e => e.id),
+            potentialSpeedup,
+            constraints: [
+              'Requires parallel execution capability',
+              'May increase resource usage',
+              'Needs coordination between parallel tasks'
+            ]
+          });
         }
       }
     }
     
-    return nearest;
-  }
-
-  private calculateChecksum(state: SystemState): string {
-    const { createHash } = require('crypto');
-    return createHash('sha256')
-      .update(JSON.stringify(state))
-      .digest('hex')
-      .substring(0, 16);
-  }
-
-  private async persistSnapshot(snapshot: StateSnapshot): Promise<void> {
-    // Store snapshot in database or file system
-    // Implementation depends on storage backend
+    return opportunities;
   }
 }
+
 
 // Type definitions
 interface StateDiff {
